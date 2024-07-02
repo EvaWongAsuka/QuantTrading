@@ -1,0 +1,86 @@
+---
+title: "Quantstrat Notebook"
+output: html_notebook
+---
+## Installation
+```{r}
+if (!requireNamespace("devtools", quietly = TRUE)) {
+    install.packages("devtools")
+}
+if (!requireNamespace("FinancialInstrument", quietly = TRUE)) {
+    install.packages("FinancialInstrument")
+}
+if (!requireNamespace("PerformanceAnalytics", quietly = TRUE)) {
+    install.packages("PerformanceAnalytics")
+}
+if (!requireNamespace("blotter", quietly = TRUE)) {
+    devtools::install_github("braverock/blotter")
+}
+if (!requireNamespace("quantstrat", quietly = TRUE)) {
+    devtools::install_github("braverock/quantstrat")
+}
+
+
+library(FinancialInstrument)
+library(PerformanceAnalytics)
+library(blotter)
+library(quantstrat)
+```
+
+## Example: maCross
+First we set up the portfolio and the account.
+```{r}
+# Using FinancialInstrument package to input the stock metadata
+stock.str="AAPL"
+currency("USD")
+stock(stock.str,currency="USD",multiplier=1)
+
+# Some backtest characteristics
+startDate="1999-12-31"
+initEq=1000000
+portfolio.st="macross"
+account.st="macross"
+initPortf(portfolio.st,symbols=stock.str)
+initAcct(account.st,portfolio=portfolio.st,initEq=initEq)
+initOrders(portfolio=portfolio.st)
+stratMACROSS<-strategy(portfolio.st)
+```
+Now we can proceed and add indicators, signals and rules.
+```{r}
+stratMACROSS<-add.indicator(strategy = stratMACROSS, name = "SMA", arguments=list(x=quote(Cl(mktdata)), n=50),label= "ma50" )
+stratMACROSS<-add.indicator(strategy = stratMACROSS, name = "SMA", arguments=list(x=quote(Cl(mktdata)[,1]), n=200),label= "ma200")
+
+stratMACROSS<-add.signal(strategy = stratMACROSS,name="sigCrossover",arguments = list(columns=c("ma50","ma200"), relationship="gte"),label="ma50.gt.ma200")
+stratMACROSS<-add.signal(strategy = stratMACROSS,name="sigCrossover",arguments = list(column=c("ma50","ma200"),relationship="lt"),label="ma50.lt.ma200")
+
+stratMACROSS<-add.rule(strategy = stratMACROSS,name='ruleSignal', arguments = list(sigcol="ma50.gt.ma200",sigval=TRUE, orderqty=100, ordertype='market', orderside='long'),type='enter')
+stratMACROSS<-add.rule(strategy = stratMACROSS,name='ruleSignal', arguments = list(sigcol="ma50.lt.ma200",sigval=TRUE, orderqty='all', ordertype='market', orderside='long'),type='exit')
+```
+
+Time to grab the market data and get ready for backtest.
+```{r}
+getSymbols(stock.str,from=startDate)
+for(i in stock.str)
+  assign(i,adjustOHLC(get(i),use.Adjusted = TRUE))
+
+start_t<-Sys.time()
+out<-applyStrategy(strategy=stratMACROSS,portfolio=portfolio.st)
+end_t<-Sys.time()
+print(end_t-start_t)
+```
+
+Finally, we can see the results:
+```{r}
+start_t<-Sys.time()
+updatePortf(Portfolio="macross",Date=paste("::",as.Date(Sys.time()),sep=''))
+end_t<-Sys.time()
+print("trade blotter portfolio update:")
+print(end_t-start_t)
+
+chart.Posn(Portfolio="macross",
+           Symbol=stock.str,
+           TA=c("add_SMA(n=50,col='red')",
+                "add_SMA(n=200,col='blue')"))
+
+zoom_Chart("2019::2024")
+```
